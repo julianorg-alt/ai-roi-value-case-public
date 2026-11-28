@@ -1,0 +1,16 @@
+{
+  "name": "ai-roi-value-case",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test 'test/*.test.mjs' && vitest run",
+    "test:unit": "node --test 'test/*.test.mjs'",
+    "test:smoke": "vitest run",
+    "demo": "node scripts/demo.cjs"
+  },
+  "devDependencies": {
+    "happy-dom": "21.0.4",
+    "vite": "8.3.5",
+    "vitest": "5.1.0"
+  }
+}

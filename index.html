@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculateur de ROI IA</title>
+<meta name="description" content="Calculateur de retour sur investissement d’un déploiement d’IA et modèle de dossier de valeur, en français et en anglais.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Atkinson+Hyperlegible+Next:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* Layout: a verdict and its cash curve first, then the assumptions as sliders on the left and what moves the result on the right.
+   Boldness is spent on one thing: the curve crossing zero. Everything else stays quiet. */
+:root {
+  --paper: #eef2ee;
+  --surface: #f8faf7;
+  --ink: #14262b;
+  --muted: #5a6b6d;
+  --line: #cbd5d0;
+  --gain: #0e7a5a;
+  --loss: #c23b22;
+  --mark: #d9971a;
+  --gain-wash: rgba(14, 122, 90, .14);
+  --loss-wash: rgba(194, 59, 34, .12);
+  --font-display: "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --step--1: 13px; --step-0: 15.5px; --step-1: 19px; --step-2: 26px; --step-3: clamp(30px, 4.4vw, 46px); --step-4: clamp(44px, 7vw, 84px);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #101b1e; --surface: #162428; --ink: #e4ece8; --muted: #93a6a5; --line: #2b3d40;
+    --gain: #4fc79c; --loss: #ff8566; --mark: #f0b43c;
+    --gain-wash: rgba(79, 199, 156, .16); --loss-wash: rgba(255, 133, 102, .14);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #101b1e; --surface: #162428; --ink: #e4ece8; --muted: #93a6a5; --line: #2b3d40;
+  --gain: #4fc79c; --loss: #ff8566; --mark: #f0b43c;
+  --gain-wash: rgba(79, 199, 156, .16); --loss-wash: rgba(255, 133, 102, .14);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 400 var(--step-0)/1.5 var(--font-body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+a { color: inherit; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+@media (max-width: 480px) { .wrap { padding: 0 16px; } }
+button { font: 500 var(--step--1)/1 var(--font-body); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; cursor: pointer; }
+button:hover { border-color: var(--ink); }
+button.go { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+/* Header */
+.bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 22px; }
+.bar h1 { font: 500 var(--step-0)/1.3 var(--font-body); margin: 0; color: var(--muted); max-width: 46ch; }
+.langs { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+.langs button { border: 0; padding: 7px 12px; }
+.langs button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+
+/* Hero */
+.hero { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 32px; align-items: end; padding: 28px 0 8px; }
+@media (max-width: 900px) { .hero { grid-template-columns: 1fr; gap: 12px; } }
+.verdict { font: 800 var(--step-3)/1.02 var(--font-display); letter-spacing: -.02em; margin: 0 0 18px; text-wrap: balance; }
+.net-label { color: var(--muted); font-size: var(--step--1); }
+#t-net .v { display: block; font: 800 var(--step-4)/1.05 var(--font-display); letter-spacing: -.035em; margin: 6px 0 12px; }
+#t-net[data-tone="good"] .v { color: var(--gain); }
+#t-net[data-tone="bad"] .v { color: var(--loss); }
+.sub { margin: 0; max-width: 44ch; color: var(--ink); font-size: var(--step-1); line-height: 1.4; text-wrap: pretty; }
+#t-net .n { display: block; color: var(--muted); font-size: var(--step--1); margin-top: 8px; }
+#t-net .n:empty { display: none; }
+.chart { position: relative; margin: 0; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .axis text { fill: var(--muted); font: 400 12px var(--font-body); }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .zero { stroke: var(--ink); stroke-width: 1.2; }
+.chart .curve { fill: none; stroke: var(--ink); stroke-width: 2.6; stroke-linejoin: round; }
+.chart .area-gain { fill: var(--gain-wash); }
+.chart .area-loss { fill: var(--loss-wash); }
+.chart .be-line { stroke: var(--mark); stroke-width: 2; stroke-dasharray: 4 4; }
+.chart .be-dot { fill: var(--mark); stroke: var(--paper); stroke-width: 3; }
+.chart .be-label { fill: var(--ink); font: 700 13px var(--font-body); }
+.chart .end-dot { stroke: var(--paper); stroke-width: 3; }
+.chart .end-label { font: 700 13px var(--font-body); }
+.chart .band { fill: var(--ink); opacity: .08; }
+.chart .kept { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 2 5; stroke-linecap: round; }
+.chart .kept-label { fill: var(--muted); font: 500 12px var(--font-body); }
+/* A halo in the page colour keeps chart labels readable where they cross a line or the band. */
+.chart .be-label, .chart .end-label, .chart .kept-label { paint-order: stroke; stroke: var(--paper); stroke-width: 4px; stroke-linejoin: round; }
+.range-line { margin: 10px 0 0; max-width: 44ch; color: var(--muted); }
+.range-line:empty, #net-range:empty { display: none; }
+#net-range { display: block; color: var(--muted); font-size: var(--step--1); }
+
+#invalid { display: none; margin: 18px 0 0; padding: 14px 16px; border-left: 4px solid var(--loss); background: var(--loss-wash); max-width: 60ch; }
+#invalid ul { margin: 6px 0 0; padding-left: 18px; }
+#results[data-state="invalid"] #invalid { display: block; }
+#results[data-state="invalid"] .chart, #results[data-state="invalid"] .kpis, #results[data-state="invalid"] #t-net .v,
+#results[data-state="invalid"] .sub, #results[data-state="invalid"] .verdict { visibility: hidden; }
+
+/* KPI strip: four readings, separated by rules, not boxed. */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 26px 0 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+@media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { padding: 16px 18px 16px 0; display: grid; gap: 2px; align-content: start; }
+.kpi + .kpi { padding-left: 18px; border-left: 1px solid var(--line); }
+@media (max-width: 760px) { .kpi:nth-child(3) { border-left: 0; padding-left: 0; } .kpi:nth-child(n+3) { border-top: 1px solid var(--line); } }
+.kpi .k { color: var(--muted); font-size: var(--step--1); }
+.kpi .v { font: 700 var(--step-2)/1.1 var(--font-display); letter-spacing: -.01em; }
+.kpi .n { color: var(--muted); font-size: 12.5px; }
+.kpi .n:empty { display: none; }
+.kpi[data-tone="good"] .v { color: var(--gain); }
+.kpi[data-tone="bad"] .v { color: var(--loss); }
+.kpi[data-tone="warn"] .v { color: var(--mark); }
+
+/* Working area */
+.work { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 48px; padding: 40px 0 24px; align-items: start; }
+@media (max-width: 960px) { .work { grid-template-columns: 1fr; gap: 32px; } }
+h2 { font: 700 var(--step-2)/1.15 var(--font-display); letter-spacing: -.01em; margin: 0 0 4px; text-wrap: balance; }
+.lead { margin: 0 0 18px; color: var(--muted); max-width: 60ch; }
+.mode { display: inline-block; margin-left: 8px; vertical-align: middle; font: 500 12.5px/1 var(--font-body); padding: 5px 9px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); }
+.mode[data-example="true"] { border-color: var(--mark); color: var(--ink); }
+
+#inputs { display: grid; gap: 30px; }
+fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; }
+legend { font: 700 var(--step-1)/1.2 var(--font-display); padding: 0 0 8px; }
+.field { display: grid; grid-template-columns: minmax(0, 1fr) 132px; grid-template-areas: "label num" "range range" "help help" "err err"; gap: 4px 16px; padding: 12px 0 14px; border-top: 1px solid var(--line); }
+.field label { grid-area: label; font-weight: 700; align-self: start; padding-top: 2px; }
+.field .num { grid-area: num; align-self: start; display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; border-bottom: 2px solid var(--line); }
+.field .num:focus-within { border-bottom-color: var(--ink); }
+.field input[type="number"] { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--ink); text-align: right; font: 700 var(--step-1)/1.4 var(--font-display); padding: 0; -moz-appearance: textfield; }
+.field input[type="number"]::-webkit-inner-spin-button, .field input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.field input[type="number"]:focus { outline: none; }
+.field .unit { color: var(--muted); font-size: var(--step--1); white-space: nowrap; }
+.field input[type="range"] { grid-area: range; width: 100%; margin: 6px 0 2px; accent-color: var(--ink); height: 22px; cursor: pointer; }
+.field .help { grid-area: help; margin: 0; color: var(--muted); font-size: var(--step--1); max-width: 62ch; }
+.field .err { grid-area: err; margin: 2px 0 0; color: var(--loss); font-weight: 700; font-size: var(--step--1); }
+.field .err:empty { display: none; }
+@media (max-width: 480px) { .field { grid-template-columns: minmax(0, 1fr) 104px; gap: 4px 10px; } }
+.field:has([aria-invalid="true"]) .num { border-bottom-color: var(--loss); }
+.field:has([aria-invalid="true"]) input[type="number"] { color: var(--loss); }
+
+.side { position: sticky; top: 20px; display: grid; gap: 34px; }
+@media (max-width: 960px) { .side { position: static; } }
+#tornado { display: grid; gap: 10px; margin-top: 6px; }
+.row { display: grid; grid-template-columns: minmax(0, 11rem) minmax(0, 1fr); gap: 12px; align-items: center; font-size: var(--step--1); }
+.row .name { line-height: 1.25; }
+@media (max-width: 520px) { .row { grid-template-columns: 1fr; gap: 2px; } }
+.track { position: relative; height: 26px; }
+.track::before { content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px; border-left: 1.5px solid var(--ink); }
+.seg { position: absolute; top: 4px; height: 18px; }
+.seg.up { background: var(--gain); }
+.seg.down { background: var(--loss); }
+.seg.up.minus, .seg.down.minus { opacity: .55; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+table { width: 100%; border-collapse: collapse; }
+caption { text-align: left; font: 700 var(--step-1)/1.2 var(--font-display); padding-bottom: 8px; }
+th, td { padding: 8px 0; border-top: 1px solid var(--line); font-size: var(--step--1); }
+th { text-align: left; font-weight: 400; color: var(--muted); }
+td { text-align: right; font-weight: 700; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#copy-status { font-size: var(--step--1); color: var(--muted); flex-basis: 100%; }
+.extra { display: grid; gap: 40px; margin-top: 44px; }
+.extra section { display: grid; gap: 10px; }
+.toggle { display: inline-flex; gap: 8px; align-items: center; font-weight: 700; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--ink); }
+.scroll { overflow-x: auto; }
+#range-table th, #range-table td { vertical-align: middle; }
+#range-table thead th { color: var(--muted); font-weight: 400; text-align: right; }
+#range-table thead th:first-child { text-align: left; }
+#range-table td { min-width: 96px; padding-left: 12px; }
+#range-table td.mid { color: var(--muted); font-weight: 400; white-space: nowrap; }
+#range-table .num { display: flex; align-items: baseline; justify-content: flex-end; gap: 4px; border-bottom: 2px solid var(--line); }
+#range-table .num:focus-within { border-bottom-color: var(--ink); }
+#range-table input { width: 100%; min-width: 0; border: 0; background: transparent; color: var(--ink); text-align: right; font: 700 var(--step-0)/1.6 var(--font-display); padding: 0; -moz-appearance: textfield; }
+#range-table input:focus { outline: none; }
+#range-table input[aria-invalid="true"] { color: var(--loss); }
+#range-table .num:has([aria-invalid="true"]) { border-bottom-color: var(--loss); }
+#range-table .unit { color: var(--muted); font-size: 12.5px; }
+@media (max-width: 560px) {
+  #range-table thead { display: none; }
+  #range-table tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  #range-table th[scope="row"] { grid-column: 1 / -1; border: 0; padding: 0 0 4px; color: var(--ink); font-weight: 700; }
+  #range-table td { border: 0; padding: 0; min-width: 0; display: grid; gap: 2px; text-align: left; }
+  #range-table td::before { content: attr(data-label); color: var(--muted); font-weight: 400; font-size: 12.5px; }
+  #range-table td.mid { align-content: start; }
+}
+.measures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 560px) { .measures { grid-template-columns: 1fr; } }
+.measures label { display: grid; gap: 6px; font-weight: 700; }
+.measures textarea { width: 100%; min-height: 120px; resize: vertical; font: 400 var(--step-0)/1.45 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.measures textarea:focus { outline: 2px solid var(--mark); outline-offset: 1px; }
+.measures p, .m-out { margin: 0; color: var(--muted); font-size: var(--step--1); }
+.m-out:empty { display: none; }
+#m-gain { color: var(--ink); font-weight: 700; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+#compare-table table { margin-top: 4px; }
+#compare-table thead th { color: var(--muted); font-weight: 400; text-align: right; }
+#compare-table td { white-space: nowrap; }
+.note { margin: 6px 0 0; color: var(--muted); font-size: var(--step--1); }
+#print-summary { display: none; }
+#copy-status:empty { display: none; }
+#md { width: 100%; min-height: 160px; font: 12.5px/1.45 ui-monospace, Menlo, monospace; color: var(--ink); background: var(--surface); border: 1px solid var(--line); padding: 10px; }
+
+.notes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 36px; padding: 36px 0 28px; border-top: 1px solid var(--line); }
+@media (max-width: 900px) { .notes { grid-template-columns: 1fr; gap: 24px; } }
+.notes h2 { font-size: var(--step-1); margin-bottom: 10px; }
+.notes ol, .notes ul { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.notes p { margin: 0 0 10px; }
+.links { display: flex; gap: 18px; flex-wrap: wrap; font-weight: 700; }
+footer { padding: 0 0 32px; color: var(--muted); font-size: 12.5px; }
+/* Phone: a result bar stays in view while the assumptions are being changed further down. */
+.peek { position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 5; display: none; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  padding: 12px 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-align: left; font: 500 var(--step--1)/1.3 var(--font-body);
+  box-shadow: 0 8px 28px rgba(20, 38, 43, .18); padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+.peek strong { font: 800 var(--step-1)/1 var(--font-display); white-space: nowrap; }
+.peek[data-tone="good"] strong { color: var(--gain); }
+.peek[data-tone="bad"] strong { color: var(--loss); }
+@media (max-width: 960px) { .peek.on { display: grid; } body { padding-bottom: 84px; } html { scroll-padding-bottom: 96px; } }
+@media print {
+  @page { size: A4; margin: 14mm; }
+  body { background: #fff; color: #000; padding: 0; font-size: 11pt; }
+  .bar .langs, .work, .notes, .peek, footer, .extra, #invalid { display: none !important; }
+  .hero { grid-template-columns: 1fr 1.3fr; gap: 18px; padding-top: 8px; }
+  #t-net .v { font-size: 34pt; }
+  .verdict { font-size: 22pt; }
+  .kpis { margin-top: 10px; }
+  #print-summary { display: block; margin-top: 12px; }
+  #print-summary h2 { font-size: 12pt; margin-bottom: 6px; }
+  #print-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; margin: 0; }
+  #print-list div { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--line); font-size: 9pt; break-inside: avoid; }
+  #print-list dt { color: var(--muted); }
+  #print-list dd { margin: 0; font-weight: 700; white-space: nowrap; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="bar">
+    <h1 data-t="title">Calculateur de retour sur investissement d’un déploiement d’IA</h1>
+    <div class="langs" role="group" aria-label="Langue / Language">
+      <button type="button" id="lang-fr" aria-pressed="true">FR</button>
+      <button type="button" id="lang-en" aria-pressed="false">EN</button>
+    </div>
+  </header>
+
+  <section id="results" aria-live="polite" data-state="ok">
+    <div class="hero">
+      <div id="t-net" class="kpi-hero">
+        <p class="verdict" id="verdict"></p>
+        <span class="net-label" id="net-label"></span>
+        <span class="v"></span>
+        <p class="sub" id="sub"></p>
+        <p class="range-line" id="range-line"></p>
+        <span class="n"></span>
+        <span id="net-range"></span>
+      </div>
+      <figure class="chart" id="chart" aria-describedby="chart-desc"><figcaption id="chart-desc" hidden></figcaption></figure>
+    </div>
+    <div id="invalid" role="alert"></div>
+    <div class="kpis">
+      <div class="kpi" id="t-roi"><span class="k" data-t="roi"></span><span class="v"></span><span class="n"></span></div>
+      <div class="kpi" id="t-payback"><span class="k" data-t="payback"></span><span class="v"></span><span class="n"></span></div>
+      <div class="kpi" id="t-breakeven"><span class="k" data-t="breakeven"></span><span class="v"></span><span class="n"></span></div>
+      <div class="kpi" id="t-hours"><span class="k" data-t="hoursKpi"></span><span class="v"></span><span class="n"></span></div>
+    </div>
+    <section id="print-summary"><h2 data-t="printAssumptions"></h2><dl id="print-list"></dl></section>
+  </section>
+
+  <div class="work">
+    <section aria-labelledby="h-inputs">
+      <h2 id="h-inputs"><span data-t="inputsTitle"></span><span class="mode" id="mode"></span></h2>
+      <p class="lead" data-t="lede"></p>
+      <form id="inputs" novalidate></form>
+      <div class="extra">
+        <section aria-labelledby="h-range">
+          <h2 id="h-range" data-t="rangeTitle"></h2>
+          <p class="lead" data-t="rangeLead"></p>
+          <label class="toggle"><input type="checkbox" id="range-on" checked><span data-t="rangeOn"></span></label>
+          <div class="scroll">
+            <table id="range-table">
+              <thead><tr><th scope="col"></th><th scope="col" data-t="prudent"></th><th scope="col" data-t="probable"></th><th scope="col" data-t="favorable"></th></tr></thead>
+              <tbody id="range-body"></tbody>
+            </table>
+          </div>
+        </section>
+        <section aria-labelledby="h-measure">
+          <h2 id="h-measure" data-t="measureTitle"></h2>
+          <p class="lead" data-t="measureLead"></p>
+          <div class="measures">
+            <label><span data-t="before"></span><textarea id="m-before" inputmode="decimal" spellcheck="false" aria-describedby="m-before-sum"></textarea><p id="m-before-sum" aria-live="polite"></p></label>
+            <label><span data-t="after"></span><textarea id="m-after" inputmode="decimal" spellcheck="false" aria-describedby="m-after-sum"></textarea><p id="m-after-sum" aria-live="polite"></p></label>
+          </div>
+          <p class="m-out" id="m-gain" aria-live="polite"></p>
+          <div class="actions"><button type="button" id="m-use" data-t="mUse" disabled></button><span class="m-out" id="m-status" role="status"></span></div>
+        </section>
+      </div>
+    </section>
+    <aside class="side">
+      <section aria-labelledby="h-weight">
+        <h2 id="h-weight" data-t="weightTitle"></h2>
+        <p class="lead" data-t="weightLead"></p>
+        <div id="tornado"></div>
+        <div class="legend"><span><i style="background:var(--gain)"></i><span data-t="legendUp"></span></span><span><i style="background:var(--loss)"></i><span data-t="legendDown"></span></span><span data-t="legendShade"></span></div>
+      </section>
+      <section aria-labelledby="h-compare">
+        <h2 id="h-compare" data-t="compareTitle"></h2>
+        <p class="lead" data-t="compareLead"></p>
+        <div class="actions"><button type="button" id="keep" data-t="keep"></button><button type="button" id="clear-kept" data-t="clearKept" hidden></button></div>
+        <div id="compare-table" aria-live="polite"></div>
+      </section>
+      <table id="detail"><caption data-t="detail"></caption><tbody></tbody></table>
+      <div class="actions">
+        <button type="button" class="go" id="copy-md" data-t="copyMd"></button>
+        <button type="button" id="copy-link" data-t="copyLink"></button>
+        <button type="button" id="reset" data-t="reset"></button>
+        <button type="button" id="print" data-t="print" hidden></button>
+        <span id="copy-status" role="status"></span>
+        <textarea id="md" hidden readonly aria-label="Markdown"></textarea>
+      </div>
+    </aside>
+  </div>
+
+  <div class="notes">
+    <section><h2 data-t="methodTitle"></h2><ol id="method"></ol></section>
+    <section><h2 data-t="limitsTitle"></h2><ul id="limits"></ul></section>
+    <section>
+      <h2 data-t="templateTitle"></h2>
+      <p data-t="template"></p>
+      <p class="links"><a id="tpl-link" href="template/value-case.fr.md" data-t="templateLink"></a><a id="ex-link" href="examples/bim-model-checking.fr.md" data-t="exampleLink"></a></p>
+    </section>
+  </div>
+  <footer data-t="footer"></footer>
+</div>
+<button type="button" id="peek" class="peek"><span id="peek-text"></span><strong id="peek-value"></strong></button>
+<script type="module" src="src/app.mjs"></script>
+</body>
+</html>
